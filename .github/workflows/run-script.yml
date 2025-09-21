@@ -21,8 +21,9 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Run script
         env:
+          CANVAS_API_URL: ${{ secrets.CANVAS_API_URL }}
+          CANVAS_API_KEY: ${{ secrets.CANVAS_API_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
-          CANVAS_API_KEY: ${{ secrets.CANVAS_API_KEY }}
         run: |
           python canvas-integration.py
