@@ -23,6 +23,6 @@ jobs:
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
-          #CANVAS_API_KEY: ${{ secrets.CANVAS_API_KEY }}
+          CANVAS_API_KEY: ${{ secrets.CANVAS_API_KEY }}
         run: |
           python test-email-send.py
