@@ -10,12 +10,12 @@ from canvasapi import Canvas
 
 # ─── Configuration ──────────────────────────────────────────────────────────
 CANVAS_API_URL   = os.environ.get("CANVAS_API_URL", "")
-CANVAS_API_TOKEN  = os.environ.get("CANVAS_API_TOKEN", "")
+CANVAS_API_KEY  = os.environ.get("CANVAS_API_KEY", "")
 GMAIL_USER = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 
 if not CANVAS_API_URL: raise ValueError("CANVAS_API_URL environment variable is required i.e. https://myschool.instructure.com")
-if not CANVAS_API_TOKEN: raise ValueError("CANVAS_API_TOKEN environment variable is required")
+if not CANVAS_API_KEY: raise ValueError("CANVAS_API_KEY environment variable is required")
 
 # ─── Email Configuration ────────────────────────────────────────────────────
 EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "true").lower() == "true"
@@ -41,7 +41,7 @@ COURSE_ALIASES = {
 
 
 # ─── Initialize Canvas Client ───────────────────────────────────────────────
-canvas = Canvas(CANVAS_API_URL, CANVAS_API_TOKEN)
+canvas = Canvas(CANVAS_API_URL, CANVAS_API_KEY)
 parent_user = canvas.get_user("self")
 observees = parent_user.get_observees()
 
