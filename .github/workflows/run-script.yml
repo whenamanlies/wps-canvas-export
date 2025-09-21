@@ -24,6 +24,6 @@ jobs:
           CANVAS_API_URL: ${{ secrets.CANVAS_API_URL }}
           CANVAS_API_KEY: ${{ secrets.CANVAS_API_KEY }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASS: ${{ secrets.GMAIL_APP_PASS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           python canvas-integration.py
