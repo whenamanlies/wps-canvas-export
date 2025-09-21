@@ -1014,8 +1014,11 @@ def send_email_report(individual_report_files, current_time):
         print("📧 Email sending disabled (set EMAIL_ENABLED=true to enable)")
         return
 
-    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        print("❌ Email configuration missing. Please set GMAIL_USER and GMAIL_APP_PASSWORD environment variables")
+    if not GMAIL_USER:
+        print("❌ Email configuration missing. Please set GMAIL_USER action secret")
+        return
+    if not GMAIL_APP_PASSWORD:
+        print("❌ Email configuration missing. Please set GMAIL_APP_PASSWORD action secret")
         return
 
     try:
