@@ -2,8 +2,8 @@ name: scheduled-python-job
 
 on:
   schedule:
-    # Runs every day at 09:00 UTC (adjust the cron)
-    - cron: "0 9 * * *"
+    # Runs every 6 hours
+    - cron: "0 */6 * * *"
   workflow_dispatch: {} # allows manual run in GitHub UI
 
 jobs:
