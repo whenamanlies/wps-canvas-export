@@ -13,6 +13,8 @@ CANVAS_API_URL   = os.environ.get("CANVAS_API_URL", "")
 CANVAS_API_KEY  = os.environ.get("CANVAS_API_KEY", "")
 GMAIL_USER = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+# EMAIL_RECIPIENTS: comma-separated list of email addresses (defaults to GMAIL_USER if not set)
+EMAIL_RECIPIENTS = os.environ.get("EMAIL_RECIPIENTS", "")
 
 if not CANVAS_API_URL: raise ValueError("CANVAS_API_URL environment variable is required i.e. https://myschool.instructure.com")
 if not CANVAS_API_KEY: raise ValueError("CANVAS_API_KEY environment variable is required")
@@ -1369,11 +1371,19 @@ def send_email_report(individual_report_files, current_time):
         print("❌ Email configuration missing. Please set GMAIL_APP_PASSWORD action secret")
         return
 
+    # Parse recipients list (comma-separated)
+    recipients_str = EMAIL_RECIPIENTS if EMAIL_RECIPIENTS else GMAIL_USER
+    recipients = [email.strip() for email in recipients_str.split(',') if email.strip()]
+
+    if not recipients:
+        print("❌ No valid email recipients configured")
+        return
+
     try:
         # Create message
         msg = MIMEMultipart('alternative')
         msg['From'] = GMAIL_USER
-        msg['To'] = GMAIL_USER
+        msg['To'] = ', '.join(recipients)
         msg['Subject'] = f"📚 Canvas Academic Report - {current_time.strftime('%Y-%m-%d %I:%M %p')}"
 
         # Generate both plain text and HTML versions
@@ -1408,10 +1418,10 @@ def send_email_report(individual_report_files, current_time):
 
         # Send email
         text = msg.as_string()
-        server.sendmail(GMAIL_USER, GMAIL_USER, text)
+        server.sendmail(GMAIL_USER, recipients, text)
         server.quit()
 
-        log(f"✅ Email sent successfully to {GMAIL_USER}")
+        log(f"✅ Email sent successfully to {', '.join(recipients)}")
         log(f"📧 Email includes comprehensive report for all students")
         log(f"📎 {len(individual_report_files)} individual student reports attached")
         # Always print success message even when logging is disabled
