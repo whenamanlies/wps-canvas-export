@@ -20,6 +20,10 @@ if not CANVAS_API_KEY: raise ValueError("CANVAS_API_KEY environment variable is 
 # ─── Email Configuration ────────────────────────────────────────────────────
 EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "true").lower() == "true"
 
+# ─── Logging Configuration ──────────────────────────────────────────────────
+# Disable logging in GitHub Actions to prevent personal data from appearing in logs
+LOGGING_ENABLED = os.environ.get("LOGGING_ENABLED", "true").lower() == "true"
+
 COURSE_ALIASES = {
     "AP Precalculus": "AP Precalculus",
     "Human Centered: Fundamentals of Human Centered Design": "Human Centered Design",
@@ -863,11 +867,13 @@ def save_html_report():
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
-        print(f"\n📄 HTML report saved as: {filename}")
-        print(f"   Open this file in your browser to view the interactive report.")
+        if LOGGING_ENABLED:
+            print(f"\n📄 HTML report saved as: {filename}")
+            print(f"   Open this file in your browser to view the interactive report.")
         return filename
     except Exception as e:
-        print(f"\n❌ Error saving HTML report: {e}")
+        if LOGGING_ENABLED:
+            print(f"\n❌ Error saving HTML report: {e}")
         return None
 
 def generate_action_items_text_report(student_id, student_data):
@@ -1001,10 +1007,12 @@ def save_individual_student_reports():
         try:
             with open(html_filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            print(f"📄 Individual HTML report saved: {html_filename}")
+            if LOGGING_ENABLED:
+                print(f"📄 Individual HTML report saved: {html_filename}")
             saved_files.append(html_filename)
         except Exception as e:
-            print(f"❌ Error saving HTML report for {student_data['name']}: {e}")
+            if LOGGING_ENABLED:
+                print(f"❌ Error saving HTML report for {student_data['name']}: {e}")
 
         # 2. Save text action items report
         text_content = generate_action_items_text_report(student_id, student_data)
@@ -1013,10 +1021,12 @@ def save_individual_student_reports():
         try:
             with open(text_filename, 'w', encoding='utf-8') as f:
                 f.write(text_content)
-            print(f"📝 Action items report saved: {text_filename}")
+            if LOGGING_ENABLED:
+                print(f"📝 Action items report saved: {text_filename}")
             saved_files.append(text_filename)
         except Exception as e:
-            print(f"❌ Error saving action items for {student_data['name']}: {e}")
+            if LOGGING_ENABLED:
+                print(f"❌ Error saving action items for {student_data['name']}: {e}")
 
     return saved_files
 
@@ -1405,7 +1415,8 @@ def generate_email_body_html():
 def send_email_report(individual_report_files, current_time):
     """Send email with comprehensive body content and individual student report attachments"""
     if not EMAIL_ENABLED:
-        print("📧 Email sending disabled (set EMAIL_ENABLED=true to enable)")
+        if LOGGING_ENABLED:
+            print("📧 Email sending disabled (set EMAIL_ENABLED=true to enable)")
         return
 
     if not GMAIL_USER:
@@ -1443,9 +1454,11 @@ def send_email_report(individual_report_files, current_time):
                     f'attachment; filename= {os.path.basename(filename)}'
                 )
                 msg.attach(part)
-                print(f"📎 Attached: {filename}")
+                if LOGGING_ENABLED:
+                    print(f"📎 Attached: {filename}")
             except Exception as e:
-                print(f"❌ Failed to attach {filename}: {e}")
+                if LOGGING_ENABLED:
+                    print(f"❌ Failed to attach {filename}: {e}")
 
         # Connect to Gmail SMTP server
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -1457,28 +1470,58 @@ def send_email_report(individual_report_files, current_time):
         server.sendmail(GMAIL_USER, GMAIL_USER, text)
         server.quit()
 
-        print(f"✅ Email sent successfully to {GMAIL_USER}")
-        print(f"📧 Email includes comprehensive report for all students")
-        print(f"📎 {len(individual_report_files)} individual student reports attached")
+        if LOGGING_ENABLED:
+            print(f"✅ Email sent successfully to {GMAIL_USER}")
+            print(f"📧 Email includes comprehensive report for all students")
+            print(f"📎 {len(individual_report_files)} individual student reports attached")
+        else:
+            print("✅ Email sent successfully")
 
     except Exception as e:
         print(f"❌ Failed to send email: {str(e)}")
-        print("💡 Make sure you're using a Gmail App Password, not your regular password")
-        print("💡 Enable 2FA and generate an App Password at: https://myaccount.google.com/apppasswords")
+        if LOGGING_ENABLED:
+            print("💡 Make sure you're using a Gmail App Password, not your regular password")
+            print("💡 Enable 2FA and generate an App Password at: https://myaccount.google.com/apppasswords")
 
+
+# ─── Logging Wrapper Functions ─────────────────────────────────────────────
+
+def log_console_overviews():
+    """Display console overviews for all students (only if logging is enabled)"""
+    if not LOGGING_ENABLED:
+        print("ℹ️  Console logging disabled (personal data protection)")
+        return
+
+    for sid in students_data:
+        full_overview(sid)
+        overdue_overview(sid)
+        upcoming_week(sid)
+
+def log_report_generation():
+    """Log report generation status (only if logging is enabled)"""
+    if LOGGING_ENABLED:
+        print(f"\n{'='*70}")
+        print("🌐 Generating HTML Reports...")
+        print(f"{'='*70}")
+    else:
+        print("🌐 Generating reports...")
+
+def log_email_status():
+    """Log email sending status (only if logging is enabled)"""
+    if LOGGING_ENABLED:
+        print(f"\n{'='*70}")
+        print("📧 Sending Email Report...")
+        print(f"{'='*70}")
+    else:
+        print("📧 Sending email...")
 
 # ─── Example Usage ──────────────────────────────────────────────────────────
 
-# Maintain existing console output
-for sid in students_data:
-    full_overview(sid)
-    overdue_overview(sid)
-    upcoming_week(sid)
+# Display console output (only if logging enabled)
+log_console_overviews()
 
 # Generate HTML reports
-print(f"\n{'='*70}")
-print("🌐 Generating HTML Reports...")
-print(f"{'='*70}")
+log_report_generation()
 
 # Save overall report
 html_filename = save_html_report()
@@ -1488,7 +1531,5 @@ individual_reports = save_individual_student_reports()
 
 # Send email if enabled and reports were generated successfully
 if individual_reports and EMAIL_ENABLED:
-    print(f"\n{'='*70}")
-    print("📧 Sending Email Report...")
-    print(f"{'='*70}")
+    log_email_status()
     send_email_report(individual_reports, now_utc.astimezone(pacific))
