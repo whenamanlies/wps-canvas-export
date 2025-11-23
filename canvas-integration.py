@@ -870,26 +870,153 @@ def save_html_report():
         print(f"\n❌ Error saving HTML report: {e}")
         return None
 
+def generate_action_items_text_report(student_id, student_data):
+    """Generate a text report for missing and poorly scored assignments for a student"""
+    current_time = now_utc.astimezone(pacific)
+    lines = []
+
+    # Header
+    lines.append("=" * 70)
+    lines.append(f"ACTION ITEMS REPORT - {student_data['name'].upper()}")
+    lines.append(f"Generated: {current_time.strftime('%Y-%m-%d %I:%M %p')}")
+    lines.append("=" * 70)
+    lines.append("")
+
+    # Collect missing assignments (overdue with missing or zero score)
+    missing_by_course = {}
+    maybe_redo_by_course = {}
+
+    for course_id, course_data in student_data['courses'].items():
+        course_display = COURSE_ALIASES.get(course_data["name"], course_data["name"])
+
+        for assignment in course_data['assignments']:
+            # Missing assignments: overdue AND (missing flag OR score is 0 OR no score and not submitted)
+            # Filter out assignments without valid points_possible
+            if assignment["due_at"] and assignment["due_at"] < current_time:
+                # Skip if no valid points_possible
+                if not assignment["points_possible"] or float(assignment["points_possible"]) == 0:
+                    continue
+
+                is_missing = False
+
+                # Check if it's marked as missing
+                if assignment["missing"]:
+                    is_missing = True
+                # Check if score is 0
+                elif assignment["score"] is not None and float(assignment["score"]) == 0:
+                    is_missing = True
+                # Check if no score and not submitted
+                elif assignment["score"] is None and not assignment["submitted_at"]:
+                    is_missing = True
+
+                if is_missing:
+                    if course_display not in missing_by_course:
+                        missing_by_course[course_display] = []
+                    missing_by_course[course_display].append(assignment)
+
+            # Maybe redo assignments: graded less than 66% (exclude 0 or missing scores)
+            if assignment["score"] is not None and assignment["points_possible"]:
+                try:
+                    points_value = float(assignment["points_possible"])
+                    # Skip if points_possible is 0
+                    if points_value == 0:
+                        continue
+
+                    score_value = float(assignment["score"])
+                    # Exclude assignments with 0 score or missing flag
+                    if score_value > 0 and not assignment.get("missing", False):
+                        percentage = (score_value / points_value) * 100
+                        if percentage < 66:
+                            if course_display not in maybe_redo_by_course:
+                                maybe_redo_by_course[course_display] = []
+                            maybe_redo_by_course[course_display].append(assignment)
+                except (ValueError, ZeroDivisionError):
+                    pass
+
+    # Section 1: Missing Assignments
+    lines.append("🚨 MISSING ASSIGNMENTS")
+    lines.append("-" * 70)
+
+    if missing_by_course:
+        # Sort courses alphabetically
+        for course_name in sorted(missing_by_course.keys()):
+            assignments = missing_by_course[course_name]
+            # Sort assignments by due date descending (most recent first)
+            assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
+
+            lines.append(f"\n📚 {course_name}")
+            for assignment in assignments:
+                due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
+                score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
+                points_str = f"{assignment['points_possible']}" if assignment["points_possible"] is not None else "—"
+                lines.append(f"   • {due_str} | {assignment['name']} | Score: {score_str}/{points_str}")
+            lines.append("")
+    else:
+        lines.append("   ✅ No missing assignments!")
+        lines.append("")
+
+    # Section 2: Maybe Redo Assignments
+    lines.append("")
+    lines.append("⚠️  MAYBE REDO (Scored < 66%)")
+    lines.append("-" * 70)
+
+    if maybe_redo_by_course:
+        # Sort courses alphabetically
+        for course_name in sorted(maybe_redo_by_course.keys()):
+            assignments = maybe_redo_by_course[course_name]
+            # Sort assignments by due date descending (most recent first)
+            assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
+
+            lines.append(f"\n📚 {course_name}")
+            for assignment in assignments:
+                due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
+                percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
+                lines.append(f"   • {due_str} | {assignment['name']} | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)")
+            lines.append("")
+    else:
+        lines.append("   ✅ No assignments scored below 66%!")
+        lines.append("")
+
+    lines.append("")
+    lines.append("=" * 70)
+    lines.append("End of Report")
+    lines.append("=" * 70)
+
+    # Use Windows-style line breaks (\r\n) for better compatibility with print preview
+    return "\r\n".join(lines)
+
 def save_individual_student_reports():
-    """Generate and save individual HTML reports for each student"""
+    """Generate and save individual HTML reports and text action items for each student"""
     saved_files = []
 
     for student_id, student_data in students_data.items():
-        # Create subset with just this student
-        student_subset = {student_id: student_data}
-        html_content = generate_html_report(student_subset)
-
         # Clean filename (remove special characters)
         clean_name = "".join(c for c in student_data['name'] if c.isalnum() or c in (' ', '-', '_')).strip()
-        filename = f"{clean_name}.html"
+
+        # 1. Save HTML report
+        student_subset = {student_id: student_data}
+        html_content = generate_html_report(student_subset)
+        html_filename = f"{clean_name}.html"
 
         try:
-            with open(filename, 'w', encoding='utf-8') as f:
+            with open(html_filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            print(f"📄 Individual report saved: {filename}")
-            saved_files.append(filename)
+            print(f"📄 Individual HTML report saved: {html_filename}")
+            saved_files.append(html_filename)
         except Exception as e:
-            print(f"❌ Error saving report for {student_data['name']}: {e}")
+            print(f"❌ Error saving HTML report for {student_data['name']}: {e}")
+
+        # 2. Save text action items report
+        text_content = generate_action_items_text_report(student_id, student_data)
+        text_filename = f"{clean_name}_ActionItems.txt"
+
+        try:
+            with open(text_filename, 'w', encoding='utf-8') as f:
+                f.write(text_content)
+            print(f"📝 Action items report saved: {text_filename}")
+            saved_files.append(text_filename)
+        except Exception as e:
+            print(f"❌ Error saving action items for {student_data['name']}: {e}")
 
     return saved_files
 
@@ -996,17 +1123,284 @@ def generate_email_body_content():
             body_content.extend(upcoming_assignments)
             body_content.append("")
 
+        # Add action items section
+        body_content.append("")
+        body_content.append("🎯 ACTION ITEMS")
+        body_content.append("-" * 40)
+
+        # Collect missing and maybe redo assignments
+        missing_by_course = {}
+        maybe_redo_by_course = {}
+
+        for course_data in student_data['courses'].values():
+            course_display = COURSE_ALIASES.get(course_data["name"], course_data["name"])
+
+            for assignment in course_data['assignments']:
+                # Missing assignments
+                if assignment["due_at"] and assignment["due_at"] < current_time:
+                    # Skip if no valid points_possible
+                    if not assignment["points_possible"] or float(assignment["points_possible"]) == 0:
+                        continue
+
+                    is_missing = False
+                    if assignment["missing"]:
+                        is_missing = True
+                    elif assignment["score"] is not None and float(assignment["score"]) == 0:
+                        is_missing = True
+                    elif assignment["score"] is None and not assignment["submitted_at"]:
+                        is_missing = True
+
+                    if is_missing:
+                        if course_display not in missing_by_course:
+                            missing_by_course[course_display] = []
+                        missing_by_course[course_display].append(assignment)
+
+                # Maybe redo assignments (exclude 0 or missing scores)
+                if assignment["score"] is not None and assignment["points_possible"]:
+                    try:
+                        points_value = float(assignment["points_possible"])
+                        # Skip if points_possible is 0
+                        if points_value == 0:
+                            continue
+
+                        score_value = float(assignment["score"])
+                        # Exclude assignments with 0 score or missing flag
+                        if score_value > 0 and not assignment.get("missing", False):
+                            percentage = (score_value / points_value) * 100
+                            if percentage < 66:
+                                if course_display not in maybe_redo_by_course:
+                                    maybe_redo_by_course[course_display] = []
+                                maybe_redo_by_course[course_display].append(assignment)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+
+        # Missing assignments
+        if missing_by_course:
+            body_content.append("")
+            body_content.append("🚨 MISSING ASSIGNMENTS:")
+            for course_name in sorted(missing_by_course.keys()):
+                assignments = missing_by_course[course_name]
+                assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
+                body_content.append(f"   📚 {course_name}")
+                for assignment in assignments:
+                    due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
+                    score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
+                    points_str = f"{assignment['points_possible']}" if assignment["points_possible"] is not None else "—"
+                    body_content.append(f"      • {due_str} | {assignment['name']} | Score: {score_str}/{points_str}")
+
+        # Maybe redo assignments
+        if maybe_redo_by_course:
+            body_content.append("")
+            body_content.append("⚠️  MAYBE REDO (Scored < 66%):")
+            for course_name in sorted(maybe_redo_by_course.keys()):
+                assignments = maybe_redo_by_course[course_name]
+                assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
+                body_content.append(f"   📚 {course_name}")
+                for assignment in assignments:
+                    due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
+                    percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
+                    body_content.append(f"      • {due_str} | {assignment['name']} | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)")
+
+        if not missing_by_course and not maybe_redo_by_course:
+            body_content.append("")
+            body_content.append("   ✅ No action items - all caught up!")
+
+        body_content.append("")
         body_content.append("=" * 50)
         body_content.append("")
 
     body_content.append("📎 ATTACHMENTS:")
-    body_content.append("Individual student reports are attached as HTML files for easy forwarding.")
-    body_content.append("Open any attachment in a web browser for detailed interactive view.")
+    body_content.append("For each student, you'll find:")
+    body_content.append("  • HTML report - Open in browser for detailed interactive view")
+    body_content.append("  • Action Items (TXT) - Missing & low-scored assignments for easy copy/paste")
     body_content.append("")
     body_content.append("Best regards,")
     body_content.append("Canvas Integration Bot")
 
     return "\n".join(body_content)
+
+def generate_email_body_html():
+    """Generate HTML email body with hyperlinked assignment names"""
+    current_time = now_utc.astimezone(pacific)
+
+    html_parts = []
+    html_parts.append("""
+    <html>
+    <head>
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; }
+            h3 { color: #555; margin-top: 20px; }
+            .student-section { margin-bottom: 30px; padding: 15px; background: #f9f9f9; border-radius: 8px; }
+            .course-name { font-weight: bold; color: #764ba2; margin-top: 10px; }
+            .assignment { margin-left: 20px; margin-bottom: 5px; }
+            .assignment a { color: #667eea; text-decoration: none; }
+            .assignment a:hover { text-decoration: underline; }
+            .stats { background: #e8f4fd; padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .grades { background: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .action-items { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .missing { color: #dc3545; }
+            .maybe-redo { color: #856404; }
+        </style>
+    </head>
+    <body>
+    """)
+
+    html_parts.append(f"<h2>📚 CANVAS ACADEMIC REPORT</h2>")
+    html_parts.append(f"<p><strong>Generated:</strong> {current_time.strftime('%Y-%m-%d %I:%M %p')}</p>")
+
+    # Generate content for each student
+    for student_id, student_data in students_data.items():
+        html_parts.append(f"<div class='student-section'>")
+        html_parts.append(f"<h3>👤 {student_data['name'].upper()}</h3>")
+
+        # Calculate statistics
+        total_courses = len(student_data['courses'])
+        total_assignments = sum(len(course['assignments']) for course in student_data['courses'].values())
+        overdue_count = 0
+        grading_overdue_count = 0
+        awaiting_grade_count = 0
+        upcoming_no_submission_count = 0
+
+        for course_data in student_data['courses'].values():
+            for assignment in course_data['assignments']:
+                if assignment["due_at"] and assignment["due_at"] < current_time:
+                    if assignment["score"] is None and not assignment["submitted_at"]:
+                        overdue_count += 1
+                elif assignment["submitted_at"] and assignment["score"] is None:
+                    submitted_time = assignment["submitted_at"]
+                    if isinstance(submitted_time, str):
+                        try:
+                            submitted_time = datetime.fromisoformat(submitted_time.rstrip("Z")).replace(tzinfo=timezone.utc).astimezone(pacific)
+                        except:
+                            submitted_time = None
+                    if submitted_time and (current_time - submitted_time).days >= 3:
+                        grading_overdue_count += 1
+                    elif submitted_time:
+                        awaiting_grade_count += 1
+                elif assignment["due_at"] and assignment["due_at"] > current_time:
+                    if assignment["score"] is None and not assignment["submitted_at"]:
+                        upcoming_no_submission_count += 1
+
+        # Summary statistics
+        html_parts.append("<div class='stats'>")
+        html_parts.append("<strong>📊 SUMMARY:</strong><br>")
+        html_parts.append(f"• Active Courses: {total_courses}<br>")
+        html_parts.append(f"• Total Assignments: {total_assignments}<br>")
+        html_parts.append(f"• Overdue Items: {overdue_count}<br>")
+        html_parts.append(f"• Grading Overdue: {grading_overdue_count}<br>")
+        html_parts.append(f"• Awaiting Grade: {awaiting_grade_count}<br>")
+        html_parts.append(f"• Upcoming (No Submission): {upcoming_no_submission_count}")
+        html_parts.append("</div>")
+
+        # Course grades
+        html_parts.append("<div class='grades'>")
+        html_parts.append("<strong>📚 COURSE GRADES:</strong><br>")
+        for course_data in student_data['courses'].values():
+            course_display = COURSE_ALIASES.get(course_data["name"], course_data["name"])
+            current_score = course_data.get("current_score")
+            final_score = course_data.get("final_score")
+            current_grade = f"{current_score:.1f}%" if current_score is not None else "No grade"
+            final_grade = f"{final_score:.1f}%" if final_score is not None else "0.0%"
+            status_indicator = "⚠️" if current_score is not None and current_score < 80 else "✅"
+            html_parts.append(f"{status_indicator} {course_display}: {current_grade} (Final: {final_grade})<br>")
+        html_parts.append("</div>")
+
+        # Action items with hyperlinks
+        missing_by_course = {}
+        maybe_redo_by_course = {}
+
+        for course_data in student_data['courses'].values():
+            course_display = COURSE_ALIASES.get(course_data["name"], course_data["name"])
+
+            for assignment in course_data['assignments']:
+                # Missing assignments
+                if assignment["due_at"] and assignment["due_at"] < current_time:
+                    # Skip if no valid points_possible
+                    if not assignment["points_possible"] or float(assignment["points_possible"]) == 0:
+                        continue
+
+                    is_missing = False
+                    if assignment["missing"]:
+                        is_missing = True
+                    elif assignment["score"] is not None and float(assignment["score"]) == 0:
+                        is_missing = True
+                    elif assignment["score"] is None and not assignment["submitted_at"]:
+                        is_missing = True
+
+                    if is_missing:
+                        if course_display not in missing_by_course:
+                            missing_by_course[course_display] = []
+                        missing_by_course[course_display].append(assignment)
+
+                # Maybe redo assignments (exclude 0 or missing scores)
+                if assignment["score"] is not None and assignment["points_possible"]:
+                    try:
+                        points_value = float(assignment["points_possible"])
+                        # Skip if points_possible is 0
+                        if points_value == 0:
+                            continue
+
+                        score_value = float(assignment["score"])
+                        # Exclude assignments with 0 score or missing flag
+                        if score_value > 0 and not assignment.get("missing", False):
+                            percentage = (score_value / points_value) * 100
+                            if percentage < 66:
+                                if course_display not in maybe_redo_by_course:
+                                    maybe_redo_by_course[course_display] = []
+                                maybe_redo_by_course[course_display].append(assignment)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+
+        if missing_by_course or maybe_redo_by_course:
+            html_parts.append("<div class='action-items'>")
+            html_parts.append("<strong>🎯 ACTION ITEMS</strong><br><br>")
+
+            # Missing assignments
+            if missing_by_course:
+                html_parts.append("<span class='missing'><strong>🚨 MISSING ASSIGNMENTS:</strong></span><br>")
+                for course_name in sorted(missing_by_course.keys()):
+                    assignments = missing_by_course[course_name]
+                    assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
+                    html_parts.append(f"<div class='course-name'>📚 {course_name}</div>")
+                    for assignment in assignments:
+                        due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
+                        score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
+                        points_str = f"{assignment['points_possible']}" if assignment["points_possible"] is not None else "—"
+                        url = assignment.get("html_url", "#")
+                        html_parts.append(f"<div class='assignment'>• {due_str} | <a href='{url}' target='_blank'>{assignment['name']}</a> | Score: {score_str}/{points_str}</div>")
+                html_parts.append("<br>")
+
+            # Maybe redo assignments
+            if maybe_redo_by_course:
+                html_parts.append("<span class='maybe-redo'><strong>⚠️ MAYBE REDO (Scored &lt; 66%):</strong></span><br>")
+                for course_name in sorted(maybe_redo_by_course.keys()):
+                    assignments = maybe_redo_by_course[course_name]
+                    assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
+                    html_parts.append(f"<div class='course-name'>📚 {course_name}</div>")
+                    for assignment in assignments:
+                        due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
+                        percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
+                        url = assignment.get("html_url", "#")
+                        html_parts.append(f"<div class='assignment'>• {due_str} | <a href='{url}' target='_blank'>{assignment['name']}</a> | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)</div>")
+
+            html_parts.append("</div>")
+        else:
+            html_parts.append("<div class='action-items'>")
+            html_parts.append("<strong>✅ No action items - all caught up!</strong>")
+            html_parts.append("</div>")
+
+        html_parts.append("</div>")  # Close student-section
+
+    html_parts.append("<hr>")
+    html_parts.append("<p><strong>📎 ATTACHMENTS:</strong><br>")
+    html_parts.append("For each student, you'll find:<br>")
+    html_parts.append("• HTML report - Open in browser for detailed interactive view<br>")
+    html_parts.append("• Action Items (TXT) - Missing & low-scored assignments for easy copy/paste</p>")
+    html_parts.append("<p>Best regards,<br>Canvas Integration Bot</p>")
+    html_parts.append("</body></html>")
+
+    return "".join(html_parts)
 
 def send_email_report(individual_report_files, current_time):
     """Send email with comprehensive body content and individual student report attachments"""
@@ -1023,14 +1417,18 @@ def send_email_report(individual_report_files, current_time):
 
     try:
         # Create message
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = GMAIL_USER
         msg['To'] = GMAIL_USER
         msg['Subject'] = f"📚 Canvas Academic Report - {current_time.strftime('%Y-%m-%d %I:%M %p')}"
 
-        # Generate comprehensive email body
-        body = generate_email_body_content()
-        msg.attach(MIMEText(body, 'plain'))
+        # Generate both plain text and HTML versions
+        text_body = generate_email_body_content()
+        html_body = generate_email_body_html()
+
+        # Attach both versions (email clients will prefer HTML if supported)
+        msg.attach(MIMEText(text_body, 'plain'))
+        msg.attach(MIMEText(html_body, 'html'))
 
         # Attach individual student HTML files
         for filename in individual_report_files:
