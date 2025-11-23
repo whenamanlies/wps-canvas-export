@@ -22,7 +22,14 @@ EMAIL_ENABLED = os.environ.get("EMAIL_ENABLED", "true").lower() == "true"
 
 # ─── Logging Configuration ──────────────────────────────────────────────────
 # Disable logging in GitHub Actions to prevent personal data from appearing in logs
-LOGGING_ENABLED = os.environ.get("LOGGING_ENABLED", "true").lower() == "true"
+LOGGING_ENABLED = os.environ.get("LOGGING_ENABLED", "false").lower() == "true"
+
+def log(*args, **kwargs):
+    """Wrapper for print() that respects LOGGING_ENABLED flag"""
+    if LOGGING_ENABLED:
+        print(*args, **kwargs)
+
+print(f"LOGGING_ENABLED = {LOGGING_ENABLED}")
 
 COURSE_ALIASES = {
     "AP Precalculus": "AP Precalculus",
@@ -44,89 +51,26 @@ COURSE_ALIASES = {
 }
 
 
-# ─── Initialize Canvas Client ───────────────────────────────────────────────
-canvas = Canvas(CANVAS_API_URL, CANVAS_API_KEY)
-parent_user = canvas.get_user("self")
-observees = parent_user.get_observees()
-
-now_utc = datetime.now(timezone.utc)
-pacific = ZoneInfo("America/Los_Angeles")
-
-# ─── Data Structure to Hold Everything ──────────────────────────────────────
-students_data = {}
-
-for student in observees:
-    student_info = {
-        "courses": {},   # course_id -> {name, current_score, final_score, assignments: []}
-    }
-
-    # 1. Fetch all active courses (via enrollments)
-    for enr in student.get_enrollments(
-        type=["StudentEnrollment"],
-        state=["active"],
-        per_page=100
-    ):
-        try:
-            course = canvas.get_course(enr.course_id)
-        except Exception:
-            continue
-
-        g = enr.grades
-        student_info["courses"][course.id] = {
-            "name": course.name,
-            "current_score": g.get("current_score"),
-            "final_score": g.get("final_score"),
-            "assignments": [],
-            "html_url": getattr(course, "html_url", f"{CANVAS_API_URL}/courses/{course.id}")
-        }
-
-        # 2. Fetch all submissions (includes assignment info)
-        for sub in course.get_multiple_submissions(
-            student_ids=[student.id],
-            include=["assignment"]
-        ):
-            a = sub.assignment
-            due_dt = None
-            if a.get("due_at"):
-                due_dt = datetime.fromisoformat(a.get("due_at").rstrip("Z")).replace(tzinfo=timezone.utc).astimezone(pacific)
-
-            student_info["courses"][course.id]["assignments"].append({
-                "id": a.get("id"),
-                "name": a.get("name"),
-                "due_at": due_dt,
-                "points_possible": a.get("points_possible"),
-                "score": getattr(sub, "score", None),
-                "grade": getattr(sub, "grade", None),
-                "missing": getattr(sub, "missing", None),
-                "submitted_at": getattr(sub, "submitted_at", None),
-                "html_url": a.get("html_url")
-            })
-
-    students_data[student.id] = {
-        "name": student.name,
-        "courses": student_info["courses"]
-    }
-
-# ─── 3. Slicing Functions ───────────────────────────────────────────────────
+# ─── Slicing Functions ───────────────────────────────────────────────────
 
 def full_overview(student_id):
     s = students_data[student_id]
-    print(f"\n{'='*70}")
-    print(f"📚 Full Overview for {s['name']}")
-    print(f"{'='*70}")
+    log(f"\n{'='*70}")
+    log(f"📚 Full Overview for {s['name']}")
+    log(f"{'='*70}")
     for cid, cdata in s["courses"].items():
         score = cdata["current_score"]
         final = cdata["final_score"]
         score_str = f"{score::<6.1f}% / {final:>5.1f}%" if score is not None else "No grade"
         course_display = COURSE_ALIASES.get(cdata["name"], cdata["name"])
-        print(f"{score_str:<18} {course_display}")
+        log(f"{score_str:<18} {course_display}")
         for a in sorted(cdata["assignments"], key=lambda x: (x["due_at"] or now_utc)):
             due_str = a["due_at"].strftime("%Y-%m-%d %I:%M %p") if a["due_at"] else "No due date"
-            print(f"    {a['score']} / {a['points_possible']} → {due_str} • {a['name']} ({a['grade']})")
+            log(f"    {a['score']} / {a['points_possible']} → {due_str} • {a['name']} ({a['grade']})")
 
 def overdue_overview(student_id):
     s = students_data[student_id]
-    print(f"\n⚠️ Overdue / Missing for {s['name']}:")
+    log(f"\n⚠️ Overdue / Missing for {s['name']}:")
     for cid, cdata in s["courses"].items():
         for a in cdata["assignments"]:
             if a["due_at"] and a["due_at"] < now_utc.astimezone(pacific):
@@ -136,18 +80,18 @@ def overdue_overview(student_id):
                 if a["missing"]:
                     due_str = a["due_at"].strftime("%Y-%m-%d %I:%M %p")
                     course_display = COURSE_ALIASES.get(cdata["name"], cdata["name"])
-                    print(f"    {due_str} • {course_display} → {a['name']} → {a['html_url']}")
+                    log(f"    {due_str} • {course_display} → {a['name']} → {a['html_url']}")
 
 def upcoming_week(student_id):
     s = students_data[student_id]
-    print(f"\n📅 Upcoming Week for {s['name']}:")
+    log(f"\n📅 Upcoming Week for {s['name']}:")
     one_week = now_utc + timedelta(days=7)
     for cid, cdata in s["courses"].items():
         for a in cdata["assignments"]:
             if a["due_at"] and now_utc.astimezone(pacific) <= a["due_at"] <= one_week.astimezone(pacific):
                 due_str = a["due_at"].strftime("%Y-%m-%d %I:%M %p")
                 course_display = COURSE_ALIASES.get(cdata["name"], cdata["name"])
-                print(f"    {due_str} • {course_display} → {a['name']}")
+                log(f"    {due_str} • {course_display} → {a['name']}")
 
 
 # ─── HTML Export Functions ──────────────────────────────────────────────────
@@ -867,13 +811,11 @@ def save_html_report():
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write(html_content)
-        if LOGGING_ENABLED:
-            print(f"\n📄 HTML report saved as: {filename}")
-            print(f"   Open this file in your browser to view the interactive report.")
+        log(f"\n📄 HTML report saved as: {filename}")
+        log(f"   Open this file in your browser to view the interactive report.")
         return filename
     except Exception as e:
-        if LOGGING_ENABLED:
-            print(f"\n❌ Error saving HTML report: {e}")
+        log(f"\n❌ Error saving HTML report: {e}")
         return None
 
 def generate_action_items_text_report(student_id, student_data):
@@ -955,7 +897,7 @@ def generate_action_items_text_report(student_id, student_data):
                 due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                 score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
                 points_str = f"{assignment['points_possible']}" if assignment["points_possible"] is not None else "—"
-                lines.append(f"   • {due_str} | {assignment['name']} | Score: {score_str}/{points_str}")
+                lines.append(f"   • {due_str} | {assignment['name']} | {score_str}/{points_str}")
             lines.append("")
     else:
         lines.append("   ✅ No missing assignments!")
@@ -977,7 +919,7 @@ def generate_action_items_text_report(student_id, student_data):
             for assignment in assignments:
                 due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                 percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
-                lines.append(f"   • {due_str} | {assignment['name']} | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)")
+                lines.append(f"   • {due_str} | {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%) | {assignment['name']}")
             lines.append("")
     else:
         lines.append("   ✅ No assignments scored below 66%!")
@@ -1007,12 +949,10 @@ def save_individual_student_reports():
         try:
             with open(html_filename, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            if LOGGING_ENABLED:
-                print(f"📄 Individual HTML report saved: {html_filename}")
+            log(f"📄 Individual HTML report saved: {html_filename}")
             saved_files.append(html_filename)
         except Exception as e:
-            if LOGGING_ENABLED:
-                print(f"❌ Error saving HTML report for {student_data['name']}: {e}")
+            log(f"❌ Error saving HTML report for {student_data['name']}: {e}")
 
         # 2. Save text action items report
         text_content = generate_action_items_text_report(student_id, student_data)
@@ -1021,12 +961,10 @@ def save_individual_student_reports():
         try:
             with open(text_filename, 'w', encoding='utf-8') as f:
                 f.write(text_content)
-            if LOGGING_ENABLED:
-                print(f"📝 Action items report saved: {text_filename}")
+            log(f"📝 Action items report saved: {text_filename}")
             saved_files.append(text_filename)
         except Exception as e:
-            if LOGGING_ENABLED:
-                print(f"❌ Error saving action items for {student_data['name']}: {e}")
+            log(f"❌ Error saving action items for {student_data['name']}: {e}")
 
     return saved_files
 
@@ -1196,7 +1134,7 @@ def generate_email_body_content():
                     due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                     score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
                     points_str = f"{assignment['points_possible']}" if assignment["points_possible"] is not None else "—"
-                    body_content.append(f"      • {due_str} | {assignment['name']} | Score: {score_str}/{points_str}")
+                    body_content.append(f"      • {due_str} | {score_str}/{points_str} | {assignment['name']}")
 
         # Maybe redo assignments
         if maybe_redo_by_course:
@@ -1209,7 +1147,7 @@ def generate_email_body_content():
                 for assignment in assignments:
                     due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                     percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
-                    body_content.append(f"      • {due_str} | {assignment['name']} | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)")
+                    body_content.append(f"      • {due_str} | {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%) | {assignment['name']}")
 
         if not missing_by_course and not maybe_redo_by_course:
             body_content.append("")
@@ -1238,17 +1176,17 @@ def generate_email_body_html():
     <html>
     <head>
         <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; }
-            h3 { color: #555; margin-top: 20px; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; font-size: 13px; }
+            h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; font-size: 18px; }
+            h3 { color: #555; margin-top: 20px; font-size: 15px; }
             .student-section { margin-bottom: 30px; padding: 15px; background: #f9f9f9; border-radius: 8px; }
-            .course-name { font-weight: bold; color: #764ba2; margin-top: 10px; }
-            .assignment { margin-left: 20px; margin-bottom: 5px; }
+            .course-name { font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px; }
+            .assignment { margin-left: 20px; margin-bottom: 5px; font-size: 12px; }
             .assignment a { color: #667eea; text-decoration: none; }
             .assignment a:hover { text-decoration: underline; }
-            .stats { background: #e8f4fd; padding: 10px; border-radius: 5px; margin: 10px 0; }
-            .grades { background: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; }
-            .action-items { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .stats { background: #e8f4fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; }
+            .grades { background: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; }
+            .action-items { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; }
             .missing { color: #dc3545; }
             .maybe-redo { color: #856404; }
         </style>
@@ -1415,8 +1353,7 @@ def generate_email_body_html():
 def send_email_report(individual_report_files, current_time):
     """Send email with comprehensive body content and individual student report attachments"""
     if not EMAIL_ENABLED:
-        if LOGGING_ENABLED:
-            print("📧 Email sending disabled (set EMAIL_ENABLED=true to enable)")
+        log("📧 Email sending disabled (set EMAIL_ENABLED=true to enable)")
         return
 
     if not GMAIL_USER:
@@ -1454,11 +1391,9 @@ def send_email_report(individual_report_files, current_time):
                     f'attachment; filename= {os.path.basename(filename)}'
                 )
                 msg.attach(part)
-                if LOGGING_ENABLED:
-                    print(f"📎 Attached: {filename}")
+                log(f"📎 Attached: {filename}")
             except Exception as e:
-                if LOGGING_ENABLED:
-                    print(f"❌ Failed to attach {filename}: {e}")
+                log(f"❌ Failed to attach {filename}: {e}")
 
         # Connect to Gmail SMTP server
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -1470,58 +1405,96 @@ def send_email_report(individual_report_files, current_time):
         server.sendmail(GMAIL_USER, GMAIL_USER, text)
         server.quit()
 
-        if LOGGING_ENABLED:
-            print(f"✅ Email sent successfully to {GMAIL_USER}")
-            print(f"📧 Email includes comprehensive report for all students")
-            print(f"📎 {len(individual_report_files)} individual student reports attached")
-        else:
+        log(f"✅ Email sent successfully to {GMAIL_USER}")
+        log(f"📧 Email includes comprehensive report for all students")
+        log(f"📎 {len(individual_report_files)} individual student reports attached")
+        # Always print success message even when logging is disabled
+        if not LOGGING_ENABLED:
             print("✅ Email sent successfully")
 
     except Exception as e:
         print(f"❌ Failed to send email: {str(e)}")
-        if LOGGING_ENABLED:
-            print("💡 Make sure you're using a Gmail App Password, not your regular password")
-            print("💡 Enable 2FA and generate an App Password at: https://myaccount.google.com/apppasswords")
+        log("💡 Make sure you're using a Gmail App Password, not your regular password")
+        log("💡 Enable 2FA and generate an App Password at: https://myaccount.google.com/apppasswords")
 
+print(f'ℹ️  Starting execution...')
+# ─── Initialize Canvas Client ───────────────────────────────────────────────
+canvas = Canvas(CANVAS_API_URL, CANVAS_API_KEY)
+parent_user = canvas.get_user("self")
+observees = parent_user.get_observees()
 
-# ─── Logging Wrapper Functions ─────────────────────────────────────────────
+now_utc = datetime.now(timezone.utc)
+pacific = ZoneInfo("America/Los_Angeles")
 
-def log_console_overviews():
-    """Display console overviews for all students (only if logging is enabled)"""
-    if not LOGGING_ENABLED:
-        print("ℹ️  Console logging disabled (personal data protection)")
-        return
+# ─── Data Structure to Hold Everything ──────────────────────────────────────
+students_data = {}
 
-    for sid in students_data:
-        full_overview(sid)
-        overdue_overview(sid)
-        upcoming_week(sid)
+print(f'ℹ️  Getting student data...')
+for student in observees:
+    print(f'ℹ️  Getting student''s data...')
+    student_info = {
+        "courses": {},   # course_id -> {name, current_score, final_score, assignments: []}
+    }
 
-def log_report_generation():
-    """Log report generation status (only if logging is enabled)"""
-    if LOGGING_ENABLED:
-        print(f"\n{'='*70}")
-        print("🌐 Generating HTML Reports...")
-        print(f"{'='*70}")
-    else:
-        print("🌐 Generating reports...")
+    # 1. Fetch all active courses (via enrollments)
+    for enr in student.get_enrollments(
+        type=["StudentEnrollment"],
+        state=["active"],
+        per_page=100
+    ):
+        try:
+            course = canvas.get_course(enr.course_id)
+        except Exception:
+            continue
 
-def log_email_status():
-    """Log email sending status (only if logging is enabled)"""
-    if LOGGING_ENABLED:
-        print(f"\n{'='*70}")
-        print("📧 Sending Email Report...")
-        print(f"{'='*70}")
-    else:
-        print("📧 Sending email...")
+        g = enr.grades
+        student_info["courses"][course.id] = {
+            "name": course.name,
+            "current_score": g.get("current_score"),
+            "final_score": g.get("final_score"),
+            "assignments": [],
+            "html_url": getattr(course, "html_url", f"{CANVAS_API_URL}/courses/{course.id}")
+        }
 
-# ─── Example Usage ──────────────────────────────────────────────────────────
+        # 2. Fetch all submissions (includes assignment info)
+        for sub in course.get_multiple_submissions(
+            student_ids=[student.id],
+            include=["assignment"]
+        ):
+            a = sub.assignment
+            due_dt = None
+            if a.get("due_at"):
+                due_dt = datetime.fromisoformat(a.get("due_at").rstrip("Z")).replace(tzinfo=timezone.utc).astimezone(pacific)
 
-# Display console output (only if logging enabled)
-log_console_overviews()
+            student_info["courses"][course.id]["assignments"].append({
+                "id": a.get("id"),
+                "name": a.get("name"),
+                "due_at": due_dt,
+                "points_possible": a.get("points_possible"),
+                "score": getattr(sub, "score", None),
+                "grade": getattr(sub, "grade", None),
+                "missing": getattr(sub, "missing", None),
+                "submitted_at": getattr(sub, "submitted_at", None),
+                "html_url": a.get("html_url")
+            })
+
+    students_data[student.id] = {
+        "name": student.name,
+        "courses": student_info["courses"]
+    }
+
+print(f'ℹ️  Slicing the data...')
+for sid in students_data:
+    full_overview(sid)
+    overdue_overview(sid)
+    upcoming_week(sid)
 
 # Generate HTML reports
-log_report_generation()
+log(f"\n{'='*70}")
+log("🌐 Generating HTML Reports...")
+log(f"{'='*70}")
+if not LOGGING_ENABLED:
+    print("🌐 Generating reports...")
 
 # Save overall report
 html_filename = save_html_report()
@@ -1531,5 +1504,9 @@ individual_reports = save_individual_student_reports()
 
 # Send email if enabled and reports were generated successfully
 if individual_reports and EMAIL_ENABLED:
-    log_email_status()
+    log(f"\n{'='*70}")
+    log("📧 Sending Email Report...")
+    log(f"{'='*70}")
+    if not LOGGING_ENABLED:
+        print("📧 Sending email...")
     send_email_report(individual_reports, now_utc.astimezone(pacific))
