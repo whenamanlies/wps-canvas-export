@@ -882,7 +882,8 @@ def generate_action_items_text_report(student_id, student_data):
                     pass
 
     # Section 1: Missing Assignments
-    lines.append("🚨 MISSING ASSIGNMENTS")
+    total_missing = sum(len(assignments) for assignments in missing_by_course.values())
+    lines.append(f"🚨 MISSING ASSIGNMENTS: {total_missing}")
     lines.append("-" * 70)
 
     if missing_by_course:
@@ -892,7 +893,7 @@ def generate_action_items_text_report(student_id, student_data):
             # Sort assignments by due date descending (most recent first)
             assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
 
-            lines.append(f"\n📚 {course_name}")
+            lines.append(f"\n📚 {course_name} ({len(assignments)})")
             for assignment in assignments:
                 due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                 score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
@@ -905,7 +906,8 @@ def generate_action_items_text_report(student_id, student_data):
 
     # Section 2: Maybe Redo Assignments
     lines.append("")
-    lines.append("⚠️  MAYBE REDO (Scored < 66%)")
+    total_redo = sum(len(assignments) for assignments in maybe_redo_by_course.values())
+    lines.append(f"⚠️  MAYBE REDO (Scored < 66%): {total_redo}")
     lines.append("-" * 70)
 
     if maybe_redo_by_course:
@@ -915,7 +917,7 @@ def generate_action_items_text_report(student_id, student_data):
             # Sort assignments by due date descending (most recent first)
             assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
 
-            lines.append(f"\n📚 {course_name}")
+            lines.append(f"\n📚 {course_name} ({len(assignments)})")
             for assignment in assignments:
                 due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                 percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
@@ -1125,11 +1127,12 @@ def generate_email_body_content():
         # Missing assignments
         if missing_by_course:
             body_content.append("")
-            body_content.append("🚨 MISSING ASSIGNMENTS:")
+            total_missing = sum(len(assignments) for assignments in missing_by_course.values())
+            body_content.append(f"🚨 MISSING ASSIGNMENTS: {total_missing}")
             for course_name in sorted(missing_by_course.keys()):
                 assignments = missing_by_course[course_name]
                 assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                body_content.append(f"   📚 {course_name}")
+                body_content.append(f"   📚 {course_name} ({len(assignments)})")
                 for assignment in assignments:
                     due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                     score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
@@ -1139,11 +1142,12 @@ def generate_email_body_content():
         # Maybe redo assignments
         if maybe_redo_by_course:
             body_content.append("")
-            body_content.append("⚠️  MAYBE REDO (Scored < 66%):")
+            total_redo = sum(len(assignments) for assignments in maybe_redo_by_course.values())
+            body_content.append(f"⚠️  MAYBE REDO (Scored < 66%): {total_redo}")
             for course_name in sorted(maybe_redo_by_course.keys()):
                 assignments = maybe_redo_by_course[course_name]
                 assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                body_content.append(f"   📚 {course_name}")
+                body_content.append(f"   📚 {course_name} ({len(assignments)})")
                 for assignment in assignments:
                     due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                     percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
@@ -1306,11 +1310,12 @@ def generate_email_body_html():
 
             # Missing assignments
             if missing_by_course:
-                html_parts.append("<span class='missing'><strong>🚨 MISSING ASSIGNMENTS:</strong></span><br>")
+                total_missing = sum(len(assignments) for assignments in missing_by_course.values())
+                html_parts.append(f"<span class='missing'><strong>🚨 MISSING ASSIGNMENTS: {total_missing}</strong></span><br>")
                 for course_name in sorted(missing_by_course.keys()):
                     assignments = missing_by_course[course_name]
                     assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                    html_parts.append(f"<div class='course-name'>📚 {course_name}</div>")
+                    html_parts.append(f"<div class='course-name'>📚 {course_name} ({len(assignments)})</div>")
                     for assignment in assignments:
                         due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                         score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
@@ -1321,11 +1326,12 @@ def generate_email_body_html():
 
             # Maybe redo assignments
             if maybe_redo_by_course:
-                html_parts.append("<span class='maybe-redo'><strong>⚠️ MAYBE REDO (Scored &lt; 66%):</strong></span><br>")
+                total_redo = sum(len(assignments) for assignments in maybe_redo_by_course.values())
+                html_parts.append(f"<span class='maybe-redo'><strong>⚠️ MAYBE REDO (Scored &lt; 66%): {total_redo}</strong></span><br>")
                 for course_name in sorted(maybe_redo_by_course.keys()):
                     assignments = maybe_redo_by_course[course_name]
                     assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                    html_parts.append(f"<div class='course-name'>📚 {course_name}</div>")
+                    html_parts.append(f"<div class='course-name'>📚 {course_name} ({len(assignments)})</div>")
                     for assignment in assignments:
                         due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                         percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
@@ -1431,7 +1437,7 @@ students_data = {}
 
 print(f'ℹ️  Getting student data...')
 for student in observees:
-    print(f'ℹ️  Getting student''s data...')
+    print(f"ℹ️  Getting student's data...")
     student_info = {
         "courses": {},   # course_id -> {name, current_score, final_score, assignments: []}
     }
