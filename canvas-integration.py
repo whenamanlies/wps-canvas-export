@@ -1190,18 +1190,38 @@ def generate_email_body_html():
     html_parts = []
     html_parts.append("""
     <html>
-    <head></head>
+    <head>
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <style>
+      @media (prefers-color-scheme: dark) {
+        body { background-color: #1a1a1a !important; color: #e0e0e0 !important; }
+        h2 { color: #8fa8ff !important; border-color: #8fa8ff !important; }
+        h3 { color: #ccc !important; }
+        a { color: #8fa8ff !important; }
+        hr { border-color: #444 !important; }
+        .student-section { background-color: #2a2a2a !important; }
+        .stats { background-color: #1a3a4a !important; color: #b8d4e8 !important; }
+        .grades { background-color: #2a2a2a !important; color: #d0d0d0 !important; }
+        .action-items { background-color: #3a3020 !important; color: #e8d8a0 !important; }
+        .filter-notice { background-color: #1a3a4a !important; color: #8ec5e8 !important; }
+        .course-name { color: #b88fd4 !important; }
+        .missing { color: #ff6b7a !important; }
+        .maybe-redo { color: #e8c860 !important; }
+      }
+    </style>
+    </head>
     <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; font-size: 13px; margin: 0; padding: 10px;">
     """)
 
     html_parts.append(f"<h2 style='color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; font-size: 18px;'>📚 CANVAS ACADEMIC REPORT</h2>")
     html_parts.append(f"<p style='font-size: 13px;'><strong>Generated:</strong> {current_time.strftime('%Y-%m-%d %I:%M %p')}</p>")
     if FILTER_DUE_DATE_BEFORE:
-        html_parts.append(f"<p style='background-color: #e8f4fd; padding: 8px 12px; border-left: 4px solid #74b9ff; font-size: 12px; color: #004085;'>📅 <strong>Filtered:</strong> Only showing assignments due on or after {FILTER_DUE_DATE_BEFORE.strftime('%Y-%m-%d')}</p>")
+        html_parts.append(f"<p class='filter-notice' style='background-color: #e8f4fd; padding: 8px 12px; border-left: 4px solid #74b9ff; font-size: 12px; color: #004085;'>📅 <strong>Filtered:</strong> Only showing assignments due on or after {FILTER_DUE_DATE_BEFORE.strftime('%Y-%m-%d')}</p>")
 
     # Generate content for each student
     for student_id, student_data in students_data.items():
-        html_parts.append(f"<div style='margin-bottom: 30px; padding: 15px; background-color: #f9f9f9;'>")
+        html_parts.append(f"<div class='student-section' style='margin-bottom: 30px; padding: 15px; background-color: #f9f9f9;'>")
         html_parts.append(f"<h3 style='color: #555; margin-top: 0; font-size: 15px;'>👤 {student_data['name'].upper()}</h3>")
 
         # Calculate statistics
@@ -1233,7 +1253,7 @@ def generate_email_body_html():
                         upcoming_no_submission_count += 1
 
         # Summary statistics
-        html_parts.append("<div style='background-color: #e8f4fd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
+        html_parts.append("<div class='stats' style='background-color: #e8f4fd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
         html_parts.append("<strong>📊 SUMMARY:</strong><br>")
         html_parts.append(f"• Active Courses: {total_courses}<br>")
         html_parts.append(f"• Total Assignments: {total_assignments}<br>")
@@ -1244,7 +1264,7 @@ def generate_email_body_html():
         html_parts.append("</div>")
 
         # Course grades
-        html_parts.append("<div style='background-color: #f0f0f0; padding: 10px; margin: 10px 0; font-size: 12px;'>")
+        html_parts.append("<div class='grades' style='background-color: #f0f0f0; padding: 10px; margin: 10px 0; font-size: 12px;'>")
         html_parts.append("<strong>📚 COURSE GRADES:</strong><br>")
         for course_data in student_data['courses'].values():
             course_display = COURSE_ALIASES.get(course_data["name"], course_data["name"])
@@ -1303,17 +1323,17 @@ def generate_email_body_html():
                         pass
 
         if missing_by_course or maybe_redo_by_course:
-            html_parts.append("<div style='background-color: #fff3cd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
+            html_parts.append("<div class='action-items' style='background-color: #fff3cd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
             html_parts.append("<strong>🎯 ACTION ITEMS</strong><br><br>")
 
             # Missing assignments
             if missing_by_course:
                 total_missing = sum(len(assignments) for assignments in missing_by_course.values())
-                html_parts.append(f"<span style='color: #dc3545;'><strong>🚨 MISSING ASSIGNMENTS: {total_missing}</strong></span><br>")
+                html_parts.append(f"<span class='missing' style='color: #dc3545;'><strong>🚨 MISSING ASSIGNMENTS: {total_missing}</strong></span><br>")
                 for course_name in sorted(missing_by_course.keys()):
                     assignments = missing_by_course[course_name]
                     assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                    html_parts.append(f"<div style='font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px;'>📚 {course_name} ({len(assignments)})</div>")
+                    html_parts.append(f"<div class='course-name' style='font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px;'>📚 {course_name} ({len(assignments)})</div>")
                     for assignment in assignments:
                         due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                         score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
@@ -1325,11 +1345,11 @@ def generate_email_body_html():
             # Maybe redo assignments
             if maybe_redo_by_course:
                 total_redo = sum(len(assignments) for assignments in maybe_redo_by_course.values())
-                html_parts.append(f"<span style='color: #856404;'><strong>⚠️ MAYBE REDO (Scored &lt; 66%): {total_redo}</strong></span><br>")
+                html_parts.append(f"<span class='maybe-redo' style='color: #856404;'><strong>⚠️ MAYBE REDO (Scored &lt; 66%): {total_redo}</strong></span><br>")
                 for course_name in sorted(maybe_redo_by_course.keys()):
                     assignments = maybe_redo_by_course[course_name]
                     assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                    html_parts.append(f"<div style='font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px;'>📚 {course_name} ({len(assignments)})</div>")
+                    html_parts.append(f"<div class='course-name' style='font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px;'>📚 {course_name} ({len(assignments)})</div>")
                     for assignment in assignments:
                         due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                         percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
@@ -1338,7 +1358,7 @@ def generate_email_body_html():
 
             html_parts.append("</div>")
         else:
-            html_parts.append("<div style='background-color: #fff3cd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
+            html_parts.append("<div class='action-items' style='background-color: #fff3cd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
             html_parts.append("<strong>✅ No action items - all caught up!</strong>")
             html_parts.append("</div>")
 
