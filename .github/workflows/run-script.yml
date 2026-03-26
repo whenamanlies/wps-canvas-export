@@ -26,5 +26,7 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          LOGGING_ENABLED: "false"  # Disable logging to prevent personal data in GitHub Actions logs
+          FILTER_DUE_DATE_BEFORE: ${{ vars.FILTER_DUE_DATE_BEFORE }}  # Optional: ISO date to exclude older assignments (e.g., 2026-01-01)
         run: |
           python canvas-integration.py

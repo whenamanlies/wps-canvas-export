@@ -15,6 +15,14 @@ GMAIL_USER = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
 # EMAIL_RECIPIENTS: comma-separated list of email addresses (defaults to GMAIL_USER if not set)
 EMAIL_RECIPIENTS = os.environ.get("EMAIL_RECIPIENTS", "")
+# FILTER_DUE_DATE_BEFORE: optional ISO date string (e.g., 2026-01-01) to exclude assignments due before this date
+FILTER_DUE_DATE_BEFORE_STR = os.environ.get("FILTER_DUE_DATE_BEFORE", "")
+FILTER_DUE_DATE_BEFORE = None
+if FILTER_DUE_DATE_BEFORE_STR:
+    try:
+        FILTER_DUE_DATE_BEFORE = datetime.fromisoformat(FILTER_DUE_DATE_BEFORE_STR).replace(tzinfo=timezone.utc)
+    except ValueError:
+        print(f"⚠️ Invalid FILTER_DUE_DATE_BEFORE value: '{FILTER_DUE_DATE_BEFORE_STR}'. Expected ISO format (e.g., 2026-01-01). Ignoring filter.")
 
 if not CANVAS_API_URL: raise ValueError("CANVAS_API_URL environment variable is required i.e. https://myschool.instructure.com")
 if not CANVAS_API_KEY: raise ValueError("CANVAS_API_KEY environment variable is required")
@@ -980,6 +988,8 @@ def generate_email_body_content():
     body_content.append("📚 CANVAS ACADEMIC REPORT")
     body_content.append("=" * 50)
     body_content.append(f"Generated: {current_time.strftime('%Y-%m-%d %I:%M %p')}")
+    if FILTER_DUE_DATE_BEFORE:
+        body_content.append(f"📅 Filtered: Only showing assignments due on or after {FILTER_DUE_DATE_BEFORE.strftime('%Y-%m-%d')}")
     body_content.append("")
 
     # Generate content for each student
@@ -1180,33 +1190,19 @@ def generate_email_body_html():
     html_parts = []
     html_parts.append("""
     <html>
-    <head>
-        <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; font-size: 13px; }
-            h2 { color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; font-size: 18px; }
-            h3 { color: #555; margin-top: 20px; font-size: 15px; }
-            .student-section { margin-bottom: 30px; padding: 15px; background: #f9f9f9; border-radius: 8px; }
-            .course-name { font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px; }
-            .assignment { margin-left: 20px; margin-bottom: 5px; font-size: 12px; }
-            .assignment a { color: #667eea; text-decoration: none; }
-            .assignment a:hover { text-decoration: underline; }
-            .stats { background: #e8f4fd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; }
-            .grades { background: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; }
-            .action-items { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 12px; }
-            .missing { color: #dc3545; }
-            .maybe-redo { color: #856404; }
-        </style>
-    </head>
-    <body>
+    <head></head>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; font-size: 13px; margin: 0; padding: 10px;">
     """)
 
-    html_parts.append(f"<h2>📚 CANVAS ACADEMIC REPORT</h2>")
-    html_parts.append(f"<p><strong>Generated:</strong> {current_time.strftime('%Y-%m-%d %I:%M %p')}</p>")
+    html_parts.append(f"<h2 style='color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 5px; font-size: 18px;'>📚 CANVAS ACADEMIC REPORT</h2>")
+    html_parts.append(f"<p style='font-size: 13px;'><strong>Generated:</strong> {current_time.strftime('%Y-%m-%d %I:%M %p')}</p>")
+    if FILTER_DUE_DATE_BEFORE:
+        html_parts.append(f"<p style='background-color: #e8f4fd; padding: 8px 12px; border-left: 4px solid #74b9ff; font-size: 12px; color: #004085;'>📅 <strong>Filtered:</strong> Only showing assignments due on or after {FILTER_DUE_DATE_BEFORE.strftime('%Y-%m-%d')}</p>")
 
     # Generate content for each student
     for student_id, student_data in students_data.items():
-        html_parts.append(f"<div class='student-section'>")
-        html_parts.append(f"<h3>👤 {student_data['name'].upper()}</h3>")
+        html_parts.append(f"<div style='margin-bottom: 30px; padding: 15px; background-color: #f9f9f9;'>")
+        html_parts.append(f"<h3 style='color: #555; margin-top: 0; font-size: 15px;'>👤 {student_data['name'].upper()}</h3>")
 
         # Calculate statistics
         total_courses = len(student_data['courses'])
@@ -1237,7 +1233,7 @@ def generate_email_body_html():
                         upcoming_no_submission_count += 1
 
         # Summary statistics
-        html_parts.append("<div class='stats'>")
+        html_parts.append("<div style='background-color: #e8f4fd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
         html_parts.append("<strong>📊 SUMMARY:</strong><br>")
         html_parts.append(f"• Active Courses: {total_courses}<br>")
         html_parts.append(f"• Total Assignments: {total_assignments}<br>")
@@ -1248,7 +1244,7 @@ def generate_email_body_html():
         html_parts.append("</div>")
 
         # Course grades
-        html_parts.append("<div class='grades'>")
+        html_parts.append("<div style='background-color: #f0f0f0; padding: 10px; margin: 10px 0; font-size: 12px;'>")
         html_parts.append("<strong>📚 COURSE GRADES:</strong><br>")
         for course_data in student_data['courses'].values():
             course_display = COURSE_ALIASES.get(course_data["name"], course_data["name"])
@@ -1307,42 +1303,42 @@ def generate_email_body_html():
                         pass
 
         if missing_by_course or maybe_redo_by_course:
-            html_parts.append("<div class='action-items'>")
+            html_parts.append("<div style='background-color: #fff3cd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
             html_parts.append("<strong>🎯 ACTION ITEMS</strong><br><br>")
 
             # Missing assignments
             if missing_by_course:
                 total_missing = sum(len(assignments) for assignments in missing_by_course.values())
-                html_parts.append(f"<span class='missing'><strong>🚨 MISSING ASSIGNMENTS: {total_missing}</strong></span><br>")
+                html_parts.append(f"<span style='color: #dc3545;'><strong>🚨 MISSING ASSIGNMENTS: {total_missing}</strong></span><br>")
                 for course_name in sorted(missing_by_course.keys()):
                     assignments = missing_by_course[course_name]
                     assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                    html_parts.append(f"<div class='course-name'>📚 {course_name} ({len(assignments)})</div>")
+                    html_parts.append(f"<div style='font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px;'>📚 {course_name} ({len(assignments)})</div>")
                     for assignment in assignments:
                         due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                         score_str = f"{assignment['score']}" if assignment["score"] is not None else "—"
                         points_str = f"{assignment['points_possible']}" if assignment["points_possible"] is not None else "—"
                         url = assignment.get("html_url", "#")
-                        html_parts.append(f"<div class='assignment'>• {due_str} | <a href='{url}' target='_blank'>{assignment['name']}</a> | Score: {score_str}/{points_str}</div>")
+                        html_parts.append(f"<div style='margin-left: 20px; margin-bottom: 5px; font-size: 12px;'>• {due_str} | <a href='{url}' style='color: #667eea; text-decoration: none;' target='_blank'>{assignment['name']}</a> | Score: {score_str}/{points_str}</div>")
                 html_parts.append("<br>")
 
             # Maybe redo assignments
             if maybe_redo_by_course:
                 total_redo = sum(len(assignments) for assignments in maybe_redo_by_course.values())
-                html_parts.append(f"<span class='maybe-redo'><strong>⚠️ MAYBE REDO (Scored &lt; 66%): {total_redo}</strong></span><br>")
+                html_parts.append(f"<span style='color: #856404;'><strong>⚠️ MAYBE REDO (Scored &lt; 66%): {total_redo}</strong></span><br>")
                 for course_name in sorted(maybe_redo_by_course.keys()):
                     assignments = maybe_redo_by_course[course_name]
                     assignments.sort(key=lambda x: x["due_at"] if x["due_at"] else datetime.min.replace(tzinfo=pacific), reverse=True)
-                    html_parts.append(f"<div class='course-name'>📚 {course_name} ({len(assignments)})</div>")
+                    html_parts.append(f"<div style='font-weight: bold; color: #764ba2; margin-top: 10px; font-size: 13px;'>📚 {course_name} ({len(assignments)})</div>")
                     for assignment in assignments:
                         due_str = assignment["due_at"].strftime("%Y-%m-%d") if assignment["due_at"] else "No due date"
                         percentage = (float(assignment["score"]) / float(assignment["points_possible"])) * 100
                         url = assignment.get("html_url", "#")
-                        html_parts.append(f"<div class='assignment'>• {due_str} | <a href='{url}' target='_blank'>{assignment['name']}</a> | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)</div>")
+                        html_parts.append(f"<div style='margin-left: 20px; margin-bottom: 5px; font-size: 12px;'>• {due_str} | <a href='{url}' style='color: #667eea; text-decoration: none;' target='_blank'>{assignment['name']}</a> | Score: {assignment['score']}/{assignment['points_possible']} ({percentage:.1f}%)</div>")
 
             html_parts.append("</div>")
         else:
-            html_parts.append("<div class='action-items'>")
+            html_parts.append("<div style='background-color: #fff3cd; padding: 10px; margin: 10px 0; font-size: 12px;'>")
             html_parts.append("<strong>✅ No action items - all caught up!</strong>")
             html_parts.append("</div>")
 
@@ -1481,6 +1477,10 @@ for student in observees:
             due_dt = None
             if a.get("due_at"):
                 due_dt = datetime.fromisoformat(a.get("due_at").rstrip("Z")).replace(tzinfo=timezone.utc).astimezone(pacific)
+
+            # Skip assignments with due dates before the filter date
+            if FILTER_DUE_DATE_BEFORE and due_dt and due_dt < FILTER_DUE_DATE_BEFORE:
+                continue
 
             student_info["courses"][course.id]["assignments"].append({
                 "id": a.get("id"),
