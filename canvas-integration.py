@@ -947,9 +947,10 @@ def generate_action_items_text_report(student_id, student_data):
 
 def save_individual_student_reports():
     """Generate and save individual HTML reports and text action items for each student"""
-    saved_files = []
+    saved_files_by_student = {}
 
     for student_id, student_data in students_data.items():
+        saved_files = []
         # Clean filename (remove special characters)
         clean_name = "".join(c for c in student_data['name'] if c.isalnum() or c in (' ', '-', '_')).strip()
 
@@ -977,13 +978,17 @@ def save_individual_student_reports():
             saved_files.append(text_filename)
         except Exception as e:
             log(f"❌ Error saving action items for {student_data['name']}: {e}")
+            
+        saved_files_by_student[student_id] = saved_files
 
-    return saved_files
+    return saved_files_by_student
 
-def generate_email_body_content():
+def generate_email_body_content(student_data_subset=None):
     """Generate comprehensive text content for email body"""
     current_time = now_utc.astimezone(pacific)
     body_content = []
+    
+    data_to_process = student_data_subset or students_data
 
     body_content.append("📚 CANVAS ACADEMIC REPORT")
     body_content.append("=" * 50)
@@ -993,7 +998,7 @@ def generate_email_body_content():
     body_content.append("")
 
     # Generate content for each student
-    for student_id, student_data in students_data.items():
+    for student_id, student_data in data_to_process.items():
         body_content.append(f"👤 {student_data['name'].upper()}")
         body_content.append("-" * 40)
 
@@ -1183,9 +1188,10 @@ def generate_email_body_content():
 
     return "\n".join(body_content)
 
-def generate_email_body_html():
+def generate_email_body_html(student_data_subset=None):
     """Generate HTML email body with hyperlinked assignment names"""
     current_time = now_utc.astimezone(pacific)
+    data_to_process = student_data_subset or students_data
 
     html_parts = []
     html_parts.append("""
@@ -1220,7 +1226,7 @@ def generate_email_body_html():
         html_parts.append(f"<p class='filter-notice' style='background-color: #e8f4fd; padding: 8px 12px; border-left: 4px solid #74b9ff; font-size: 12px; color: #004085;'>📅 <strong>Filtered:</strong> Only showing assignments due on or after {FILTER_DUE_DATE_BEFORE.strftime('%Y-%m-%d')}</p>")
 
     # Generate content for each student
-    for student_id, student_data in students_data.items():
+    for student_id, student_data in data_to_process.items():
         html_parts.append(f"<div class='student-section' style='margin-bottom: 30px; padding: 15px; background-color: #f9f9f9;'>")
         html_parts.append(f"<h3 style='color: #555; margin-top: 0; font-size: 15px;'>👤 {student_data['name'].upper()}</h3>")
 
@@ -1374,8 +1380,8 @@ def generate_email_body_html():
 
     return "".join(html_parts)
 
-def send_email_report(individual_report_files, current_time):
-    """Send email with comprehensive body content and individual student report attachments"""
+def send_email_reports(reports_by_student, current_time):
+    """Send separate emails with body content and individual student attachments"""
     if not EMAIL_ENABLED:
         log("📧 Email sending disabled (set EMAIL_ENABLED=true to enable)")
         return
@@ -1396,53 +1402,59 @@ def send_email_report(individual_report_files, current_time):
         return
 
     try:
-        # Create message
-        msg = MIMEMultipart('alternative')
-        msg['From'] = GMAIL_USER
-        msg['To'] = ', '.join(recipients)
-        msg['Subject'] = f"📚 Canvas Academic Report - {current_time.strftime('%Y-%m-%d %I:%M %p')}"
-
-        # Generate both plain text and HTML versions
-        text_body = generate_email_body_content()
-        html_body = generate_email_body_html()
-
-        # Attach both versions (email clients will prefer HTML if supported)
-        msg.attach(MIMEText(text_body, 'plain'))
-        msg.attach(MIMEText(html_body, 'html'))
-
-        # Attach individual student HTML files
-        for filename in individual_report_files:
-            try:
-                with open(filename, "rb") as attachment:
-                    part = MIMEBase('application', 'octet-stream')
-                    part.set_payload(attachment.read())
-
-                encoders.encode_base64(part)
-                part.add_header(
-                    'Content-Disposition',
-                    f'attachment; filename= {os.path.basename(filename)}'
-                )
-                msg.attach(part)
-                log(f"📎 Attached: {filename}")
-            except Exception as e:
-                log(f"❌ Failed to attach {filename}: {e}")
-
-        # Connect to Gmail SMTP server
+        # Connect to Gmail SMTP server once
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()  # Enable encryption
         server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
 
-        # Send email
-        text = msg.as_string()
-        server.sendmail(GMAIL_USER, recipients, text)
-        server.quit()
+        # Loop through each student to construct and send individual emails
+        for student_id, individual_report_files in reports_by_student.items():
+            student_subset = {student_id: students_data[student_id]}
+            student_name = students_data[student_id]['name']
 
-        log(f"✅ Email sent successfully to {', '.join(recipients)}")
-        log(f"📧 Email includes comprehensive report for all students")
-        log(f"📎 {len(individual_report_files)} individual student reports attached")
+            # Create message for this specific student
+            msg = MIMEMultipart('alternative')
+            msg['From'] = GMAIL_USER
+            msg['To'] = ', '.join(recipients)
+            msg['Subject'] = f"📚 Canvas Academic Report - {student_name} - {current_time.strftime('%Y-%m-%d %I:%M %p')}"
+
+            # Generate plain text and HTML versions for this student
+            text_body = generate_email_body_content(student_subset)
+            html_body = generate_email_body_html(student_subset)
+
+            # Attach both versions
+            msg.attach(MIMEText(text_body, 'plain'))
+            msg.attach(MIMEText(html_body, 'html'))
+
+            # Attach individual student HTML files
+            for filename in individual_report_files:
+                try:
+                    with open(filename, "rb") as attachment:
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(attachment.read())
+
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename= {os.path.basename(filename)}'
+                    )
+                    msg.attach(part)
+                    log(f"📎 Attached: {filename}")
+                except Exception as e:
+                    log(f"❌ Failed to attach {filename}: {e}")
+
+            # Send email for this specific student
+            text = msg.as_string()
+            server.sendmail(GMAIL_USER, recipients, text)
+            log(f"✅ Email sent successfully for {student_name} to {', '.join(recipients)}")
+
+        # Close server connection
+        server.quit()
+        
+        log(f"📧 All individual emails sent successfully")
         # Always print success message even when logging is disabled
         if not LOGGING_ENABLED:
-            print("✅ Email sent successfully")
+            print("✅ Emails sent successfully")
 
     except Exception as e:
         print(f"❌ Failed to send email: {str(e)}")
@@ -1536,13 +1548,13 @@ if not LOGGING_ENABLED:
 html_filename = save_html_report()
 
 # Save individual student reports
-individual_reports = save_individual_student_reports()
+individual_reports_by_student = save_individual_student_reports()
 
 # Send email if enabled and reports were generated successfully
-if individual_reports and EMAIL_ENABLED:
+if individual_reports_by_student and EMAIL_ENABLED:
     log(f"\n{'='*70}")
-    log("📧 Sending Email Report...")
+    log("📧 Sending Email Reports...")
     log(f"{'='*70}")
     if not LOGGING_ENABLED:
-        print("📧 Sending email...")
-    send_email_report(individual_reports, now_utc.astimezone(pacific))
+        print("📧 Sending emails...")
+    send_email_reports(individual_reports_by_student, now_utc.astimezone(pacific))
