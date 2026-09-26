@@ -2,8 +2,8 @@ name: scheduled-python-job
 
 on:
   schedule:
-    # Runs every 12 hours
-    - cron: "0 14 * * *"
+    - cron: "0 17 * * *"
+      timezone: "America/Los_Angeles"    
   workflow_dispatch: {} # allows manual run in GitHub UI
 
 jobs:
